@@ -1,61 +1,42 @@
-# glance
+# glance (fork with comment extraction)
 
-[![Package Version](https://img.shields.io/hexpm/v/glance)](https://hex.pm/packages/glance)
-[![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/glance/)
+Fork of [lpil/glance](https://github.com/lpil/glance) — a Gleam source code parser, in Gleam.
 
-A Gleam source code parser, in Gleam!
+Upstream version: **6.0.0**
 
-Glance attempts to be permissive with regards to what it will parse and so it is
-able to parse some code that the Gleam compiler will reject as invalid.
+## What this fork adds
+
+Upstream glance discards comments during lexing. This fork preserves them by
+replacing `glexer.discard_comments` with a `collect_comments` pipeline that
+extracts comments from the token stream before parsing.
+
+New types:
+
+- `CommentKind` — `RegularComment` (`//`), `DocComment` (`///`), `ModuleComment` (`////`)
+- `Comment` — holds `kind`, `text`, and byte-offset `Span`
+
+The `Module` record gains a `comments: List(Comment)` field. Consecutive
+doc/module comments of the same kind are merged into a single `Comment` with
+newline-joined text and a span covering the full range.
+
+## Upstream tracking
+
+| Remote   | URL                                                   |
+| -------- | ----------------------------------------------------- |
+| origin   | `https://github.com/KeAiMianYang/glance_comments.git` |
+| upstream | `https://github.com/lpil/glance`                      |
+
+To sync with upstream: `git fetch upstream && git merge upstream/main`, then
+resolve any conflicts in `src/glance.gleam` around the comment-extraction code.
 
 ## Usage
 
-Add the package to your Gleam project:
-
-```sh
-gleam add glance
-```
-
-Then get parsing!
-
 ```gleam
 import glance
-import gleam/io
-
-const code = "
-  pub type Cardinal {
-    North
-    East
-    South
-    West
-  }
-"
 
 pub fn main() {
-  let assert Ok(parsed) = glance.module(code)
-  echo parsed.custom_types
+  let assert Ok(parsed) = glance.module("/// A doc comment\npub fn main() { Nil }")
+  echo parsed.comments
+  // [Comment(DocComment, " A doc comment", Span(0, 17))]
 }
 ```
-
-This program print this to the console:
-  
-```gleam
-[
-  Definition(
-    [],
-    CustomType(
-      name: "Cardinal",
-      publicity: Public,
-      parameters: [],
-      variants: [
-        Variant("North", []),
-        Variant("East", []),
-        Variant("South", []),
-        Variant("West", []),
-      ],
-    ),
-  ),
-]
-```
-
-API documentation can be found at <https://hexdocs.pm/glance>.
