@@ -1,14 +1,10 @@
 name = "glance"
 version = "6.1.0"
-description = "A Gleam source code parser, in Gleam!"
-gleam = ">= 1.7.0"
+description = "Fork of lpil/glance with comment extraction support"
 
-licences = ["Apache-2.0"]
-repository = { type = "github", user = "lpil", repo = "glance" }
-links = [
-  { title = "Website", href = "https://gleam.run" },
-  { title = "Sponsor", href = "https://github.com/sponsors/lpil" },
-]
+# Fork of https://github.com/lpil/glance
+# Upstream remote: `upstream` (origin removed to avoid accidental pushes)
+# Delta: CommentKind, Comment types + collect_comments pipeline on Module.
 
 [dependencies]
 gleam_stdlib = ">= 0.28.0 and < 2.0.0"

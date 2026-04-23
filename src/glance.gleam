@@ -24,6 +24,7 @@ pub type Module {
     type_aliases: List(Definition(TypeAlias)),
     constants: List(Definition(Constant)),
     functions: List(Definition(Function)),
+    comments: List(Comment),
   )
 }
 
@@ -41,6 +42,22 @@ pub type Function {
 pub type Span {
   /// A span within a file, indicated by byte offsets.
   Span(start: Int, end: Int)
+}
+
+/// The kind of comment found in source code.
+pub type CommentKind {
+  /// A regular comment starting with `//`.
+  RegularComment
+  /// A documentation comment starting with `///`.
+  DocComment
+  /// A module-level documentation comment starting with `////`.
+  ModuleComment
+}
+
+/// A comment extracted from source code, with its kind, text content,
+/// and byte-offset span indicating its position in the source.
+pub type Comment {
+  Comment(kind: CommentKind, text: String, span: Span)
 }
 
 pub type Statement {
@@ -339,11 +356,102 @@ pub type Error {
 }
 
 pub fn module(src: String) -> Result(Module, Error) {
-  glexer.new(src)
-  |> glexer.discard_comments
-  |> glexer.discard_whitespace
-  |> glexer.lex
-  |> slurp(Module([], [], [], [], []), [], _)
+  let tokens =
+    glexer.new(src)
+    |> glexer.discard_whitespace
+    |> glexer.lex
+
+  let #(comments, tokens) = collect_comments(tokens)
+
+  slurp(Module([], [], [], [], [], comments), [], tokens)
+}
+
+type PendingComment {
+  PendingComment(kind: CommentKind, text: String, span: Span)
+}
+
+fn collect_comments(tokens: Tokens) -> #(List(Comment), Tokens) {
+  collect_comments_loop(tokens, None, [], [])
+}
+
+fn collect_comments_loop(
+  tokens: Tokens,
+  pending: Option(PendingComment),
+  comments: List(Comment),
+  kept: Tokens,
+) -> #(List(Comment), Tokens) {
+  case tokens {
+    [] -> #(list.reverse(flush_pending(pending, comments)), list.reverse(kept))
+
+    [#(t.CommentDoc(text), P(start)), ..rest] -> {
+      let end = string_offset(start, t.to_source(t.CommentDoc(text)))
+      let span = Span(start, end)
+      let #(pending, comments) =
+        merge_or_flush(pending, DocComment, text, span, comments)
+      collect_comments_loop(rest, Some(pending), comments, kept)
+    }
+
+    [#(t.CommentModule(text), P(start)), ..rest] -> {
+      let end = string_offset(start, t.to_source(t.CommentModule(text)))
+      let span = Span(start, end)
+      let #(pending, comments) =
+        merge_or_flush(pending, ModuleComment, text, span, comments)
+      collect_comments_loop(rest, Some(pending), comments, kept)
+    }
+
+    [#(t.CommentNormal(text), P(start)), ..rest] -> {
+      let end = string_offset(start, t.to_source(t.CommentNormal(text)))
+      let span = Span(start, end)
+      let comments = flush_pending(pending, comments)
+      let new_pending = PendingComment(RegularComment, text, span)
+      collect_comments_loop(rest, Some(new_pending), comments, kept)
+    }
+
+    [token, ..rest] -> {
+      let comments = flush_pending(pending, comments)
+      collect_comments_loop(rest, None, comments, [token, ..kept])
+    }
+  }
+}
+
+fn merge_or_flush(
+  pending: Option(PendingComment),
+  kind: CommentKind,
+  text: String,
+  span: Span,
+  comments: List(Comment),
+) -> #(PendingComment, List(Comment)) {
+  case pending {
+    None -> #(PendingComment(kind, text, span), comments)
+    Some(PendingComment(prev_kind, prev_text, prev_span)) ->
+      case kind == prev_kind {
+        True -> #(
+          PendingComment(
+            kind,
+            prev_text <> "\n" <> text,
+            Span(prev_span.start, span.end),
+          ),
+          comments,
+        )
+        False -> #(PendingComment(kind, text, span), [
+          Comment(prev_kind, prev_text, prev_span),
+          ..comments
+        ])
+      }
+  }
+}
+
+fn flush_pending(
+  pending: Option(PendingComment),
+  comments: List(Comment),
+) -> List(Comment) {
+  case pending {
+    None -> comments
+    Some(PendingComment(kind, text, span)) -> [
+      Comment(kind, text, span),
+      ..comments
+    ]
+  }
 }
 
 fn push_constant(
